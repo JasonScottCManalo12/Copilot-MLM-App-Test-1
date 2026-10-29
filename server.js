@@ -1,70 +1,116 @@
-const express = require('express');
-const path = require('path');
-const { members, products, orders, plans, payoutBatches } = require('./src/data');
-const { buildTree, getDownline, calculateCommissions, summarizeCommissionData } = require('./src/mlm');
+const { prisma } = require('../lib/prisma');
 
-const app = express();
-const PORT = process.env.PORT || 3000;
+async function getPlans() {
+  return prisma.plan.findMany({ orderBy: { createdAt: 'asc' } });
+}
 
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-app.get('/api/health', (_req, res) => {
-  res.json({
-    ok: true,
-    app: 'Copilot-MLM-App-Test-1',
-    mode: 'legitimate-product-based-mlm',
-    timestamp: new Date().toISOString(),
+async function getMembers() {
+  return prisma.user.findMany({
+    orderBy: { createdAt: 'asc' },
+    include: { sponsor: true, plan: true },
   });
-});
+}
 
-app.get('/api/plans', (_req, res) => {
-  res.json(plans);
-});
+async function getProducts() {
+  return prisma.product.findMany({
+    where: { active: true },
+    orderBy: { createdAt: 'asc' },
+  });
+}
 
-app.get('/api/members', (_req, res) => {
-  res.json(members);
-});
+async function getOrders() {
+  return prisma.order.findMany({
+    include: { user: true, product: true },
+    orderBy: { createdAt: 'asc' },
+  });
+}
 
-app.get('/api/products', (_req, res) => {
-  res.json(products);
-});
+async function getSummary() {
+  const [totalMembers, activeMembers, totalProducts, totalSales] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { status: 'ACTIVE' } }),
+    prisma.product.count({ where: { active: true } }),
+    prisma.order.aggregate({ _sum: { total: true } }),
+  ]);
 
-app.get('/api/orders', (_req, res) => {
-  res.json(orders);
-});
+  const activePlan = await prisma.plan.findFirst({ where: { status: 'active' } });
 
-app.get('/api/payouts', (_req, res) => {
-  res.json(payoutBatches);
-});
+  return {
+    totalMembers,
+    activeMembers,
+    pausedMembers: totalMembers - activeMembers,
+    totalProducts,
+    totalSales: Number(totalSales._sum.total || 0),
+    activePlan,
+    generatedAt: new Date().toISOString(),
+  };
+}
 
-app.get('/api/tree/:memberId', (req, res) => {
-  const { memberId } = req.params;
-  const tree = buildTree(members, memberId);
-  res.json(tree);
-});
+async function buildDownlineTree(memberId) {
+  const directChildren = await prisma.user.findMany({
+    where: { sponsorId: memberId },
+    include: { sponsor: true },
+  });
 
-app.get('/api/downline/:memberId', (req, res) => {
-  const { memberId } = req.params;
-  const downline = getDownline(memberId, members);
-  res.json(downline);
-});
+  const children = [];
+  for (const child of directChildren) {
+    children.push({
+      ...child,
+      children: await buildDownlineTree(child.id),
+    });
+  }
 
-app.get('/api/commissions/:memberId', (req, res) => {
-  const { memberId } = req.params;
-  const output = calculateCommissions(memberId, members, products, orders, plans);
-  res.json(output);
-});
+  return children;
+}
 
-app.get('/api/summary', (_req, res) => {
-  const summary = summarizeCommissionData(members, products, orders, plans);
-  res.json(summary);
-});
+async function getTree(memberId) {
+  const member = await prisma.user.findUnique({
+    where: { id: memberId },
+    include: { sponsor: true },
+  });
 
-app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
+  if (!member) {
+    throw new Error('Member not found');
+  }
 
-app.listen(PORT, () => {
-  console.log(`MLM App Test 1 running on http://localhost:${PORT}`);
-});
+  return {
+    ...member,
+    children: await buildDownlineTree(member.id),
+  };
+}
+
+async function getCommissionSummary(memberId) {
+  const member = await prisma.user.findUnique({
+    where: { id: memberId },
+    include: { plan: true },
+  });
+
+  if (!member) {
+    throw new Error('Member not found');
+  }
+
+  const rows = await prisma.commission.findMany({
+    where: { userId: memberId },
+    include: { order: true, plan: true },
+  });
+
+  const totalCommission = rows.reduce((sum, row) => sum + Number(row.amount), 0);
+
+  return {
+    memberId,
+    memberName: `${member.firstName} ${member.lastName}`,
+    planName: member.plan?.name || 'No plan',
+    totalCommission,
+    rows,
+  };
+}
+
+module.exports = {
+  getPlans,
+  getMembers,
+  getProducts,
+  getOrders,
+  getSummary,
+  getTree,
+  getCommissionSummary,
+};
