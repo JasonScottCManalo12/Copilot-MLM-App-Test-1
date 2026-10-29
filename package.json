@@ -1,11 +1,15 @@
 {
   "name": "copilot-mlm-app-test-1",
   "version": "1.0.0",
-  "description": "Legitimate product-based MLM platform starter for sponsor trees, commissions, product sales, and audit records.",
+  "description": "Legitimate product-based MLM platform built with Node.js, Express, PostgreSQL, and Prisma.",
   "main": "server.js",
   "scripts": {
+    "dev": "node --watch server.js",
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "prisma:generate": "prisma generate",
+    "prisma:push": "prisma db push",
+    "prisma:studio": "prisma studio",
+    "seed": "node src/seed.js"
   },
   "keywords": [
     "mlm",
@@ -18,6 +22,10 @@
   "author": "Jason Scott C. Manalo",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.19.2"
+    "@prisma/client": "^5.16.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "prisma": "^5.16.0"
   }
 }

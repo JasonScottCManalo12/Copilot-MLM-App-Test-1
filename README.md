@@ -1,98 +1,141 @@
-async function fetchJson(url) {
-  const response = await fetch(url);
-  return response.json();
-}
+const express = require('express');
+const cors = require('cors');
+const dotenv = require('dotenv');
+const { prisma } = require('./src/lib/prisma');
 
-function renderSummary(summary) {
-  const cards = [
-    { label: 'Members', value: summary.totalMembers },
-    { label: 'Active', value: summary.activeMembers },
-    { label: 'Paused', value: summary.pausedMembers },
-    { label: 'Sales', value: `$${summary.totalSales.toFixed(2)}` },
-  ];
+dotenv.config();
 
-  document.getElementById('summaryCards').innerHTML = cards
-    .map(
-      (card) => `
-        <div class="card">
-          <span class="label">${card.label}</span>
-          <span class="value">${card.value}</span>
-        </div>
-      `,
-    )
-    .join('');
-}
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-function renderPlans(plans) {
-  const el = document.getElementById('plansList');
-  el.innerHTML = plans
-    .map(
-      (plan) => `
-        <div class="plan-item">
-          <strong>${plan.name}</strong>
-          <div>${plan.type}</div>
-          <div class="meta">Status: ${plan.status}</div>
-        </div>
-      `,
-    )
-    .join('');
-}
+app.use(cors());
+app.use(express.json());
 
-function renderTree(tree) {
-  const el = document.getElementById('treeView');
+app.get('/api/health', (_req, res) => {
+  res.json({
+    ok: true,
+    app: 'Copilot MLM App Test 1',
+    stack: 'Node.js + Express + PostgreSQL + Prisma',
+    timestamp: new Date().toISOString(),
+  });
+});
 
-  function renderNode(node) {
-    if (!node) return '';
-    const children = node.children && node.children.length ? node.children.map(renderNode).join('') : '';
-    return `
-      <div class="member-node">
-        <div><strong>${node.firstName} ${node.lastName}</strong></div>
-        <div class="meta">Rank: ${node.rank} • ${node.location}</div>
-        <div class="meta">Status: ${node.status}</div>
-        ${children ? `<div class="tree-children">${children}</div>` : ''}
-      </div>
-    `;
+app.get('/api/plans', async (_req, res) => {
+  const plans = await prisma.plan.findMany({ orderBy: { createdAt: 'asc' } });
+  res.json(plans);
+});
+
+app.get('/api/members', async (_req, res) => {
+  const members = await prisma.user.findMany({
+    orderBy: { createdAt: 'asc' },
+    include: { sponsor: true, plan: true },
+  });
+  res.json(members);
+});
+
+app.get('/api/products', async (_req, res) => {
+  const products = await prisma.product.findMany({
+    where: { active: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json(products);
+});
+
+app.get('/api/orders', async (_req, res) => {
+  const orders = await prisma.order.findMany({
+    include: { user: true, product: true },
+    orderBy: { createdAt: 'asc' },
+  });
+  res.json(orders);
+});
+
+app.get('/api/summary', async (_req, res) => {
+  const [totalMembers, activeMembers, totalProducts, totalSales] = await Promise.all([
+    prisma.user.count(),
+    prisma.user.count({ where: { status: 'ACTIVE' } }),
+    prisma.product.count({ where: { active: true } }),
+    prisma.order.aggregate({
+      _sum: { total: true },
+    }),
+  ]);
+
+  const activePlan = await prisma.plan.findFirst({ where: { status: 'active' } });
+
+  res.json({
+    totalMembers,
+    activeMembers,
+    pausedMembers: totalMembers - activeMembers,
+    totalProducts,
+    totalSales: Number(totalSales._sum.total || 0),
+    activePlan,
+    generatedAt: new Date().toISOString(),
+  });
+});
+
+app.get('/api/tree/:memberId', async (req, res) => {
+  const memberId = req.params.memberId;
+  const member = await prisma.user.findUnique({
+    where: { id: memberId },
+    include: { sponsor: true, downline: true },
+  });
+
+  if (!member) {
+    return res.status(404).json({ error: 'Member not found' });
   }
 
-  const root = Array.isArray(tree) ? tree : [tree];
-  el.innerHTML = root.map(renderNode).join('');
+  const tree = {
+    ...member,
+    children: await buildDownlineTree(member.id),
+  };
+
+  res.json(tree);
+});
+
+app.get('/api/commissions/:memberId', async (req, res) => {
+  const memberId = req.params.memberId;
+
+  const member = await prisma.user.findUnique({
+    where: { id: memberId },
+    include: { plan: true },
+  });
+
+  if (!member) {
+    return res.status(404).json({ error: 'Member not found' });
+  }
+
+  const commissionRows = await prisma.commission.findMany({
+    where: { userId: memberId },
+    include: { order: true, plan: true },
+  });
+
+  const totalCommission = commissionRows.reduce((sum, row) => sum + Number(row.amount), 0);
+
+  res.json({
+    memberId,
+    memberName: `${member.firstName} ${member.lastName}`,
+    planName: member.plan?.name || 'No plan',
+    totalCommission,
+    rows: commissionRows,
+  });
+});
+
+async function buildDownlineTree(memberId) {
+  const directChildren = await prisma.user.findMany({
+    where: { sponsorId: memberId },
+    include: { sponsor: true },
+  });
+
+  const children = [];
+  for (const child of directChildren) {
+    children.push({
+      ...child,
+      children: await buildDownlineTree(child.id),
+    });
+  }
+
+  return children;
 }
 
-async function renderCommissionSummary() {
-  const commissions = await fetchJson('/api/commissions/m-100');
-  const el = document.getElementById('commissionView');
-
-  const rows = [
-    { label: 'Direct sales', value: `$${commissions.totalCommission.toFixed(2)}` },
-    { label: 'Team bonus', value: `$${commissions.teamBonus.toFixed(2)}` },
-    { label: 'Total payout', value: `$${commissions.totalPayout.toFixed(2)}` },
-    { label: 'Team volume', value: `$${commissions.teamVolume.toFixed(2)}` },
-  ];
-
-  el.innerHTML = rows
-    .map(
-      (row) => `
-        <div class="comp-row">
-          <span>${row.label}</span>
-          <strong>${row.value}</strong>
-        </div>
-      `,
-    )
-    .join('');
-}
-
-async function main() {
-  const summary = await fetchJson('/api/summary');
-  const plans = await fetchJson('/api/plans');
-  const tree = await fetchJson('/api/tree/m-100');
-
-  renderSummary(summary);
-  renderPlans(plans);
-  renderTree(tree);
-  renderCommissionSummary();
-}
-
-const refreshButton = document.getElementById('refreshButton');
-refreshButton.addEventListener('click', main);
-
-main();
+app.listen(PORT, () => {
+  console.log(`MLM app running on http://localhost:${PORT}`);
+});

@@ -1,0 +1,117 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserStatus {
+  ACTIVE
+  PAUSED
+  TERMINATED
+}
+
+enum PlanType {
+  SPONSOR_TREE
+  UNILEVEL
+  MATRIX
+  BINARY
+  HYBRID
+}
+
+enum CommissionStatus {
+  PENDING
+  APPROVED
+  REVERSED
+}
+
+model Plan {
+  id          String    @id @default(cuid())
+  name        String
+  type        PlanType
+  status      String    @default("draft")
+  description String?
+  config      Json
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  users       User[]
+  commissions Commission[]
+}
+
+model User {
+  id          String      @id @default(cuid())
+  firstName   String
+  lastName    String
+  email       String      @unique
+  sponsorId   String?
+  sponsor     User?       @relation("UserSponsor", fields: [sponsorId], references: [id])
+  downline    User[]      @relation("UserSponsor")
+  planId      String?
+  plan        Plan?       @relation(fields: [planId], references: [id])
+  status      UserStatus  @default(ACTIVE)
+  rank        String      @default("member")
+  country     String?
+  city        String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  orders      Order[]
+  commissions Commission[]
+  payouts     Payout[]
+}
+
+model Product {
+  id             String   @id @default(cuid())
+  name           String
+  sku            String   @unique
+  price          Decimal  @db.Decimal(10, 2)
+  pv             Int      @default(0)
+  bv             Int      @default(0)
+  commissionRate Decimal  @db.Decimal(10, 4)
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  orders         Order[]
+}
+
+model Order {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  productId   String
+  product     Product     @relation(fields: [productId], references: [id])
+  quantity    Int         @default(1)
+  total       Decimal     @db.Decimal(10, 2)
+  isRetail    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  commissions Commission[]
+}
+
+model Commission {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id])
+  orderId     String?
+  order       Order?            @relation(fields: [orderId], references: [id])
+  planId      String?
+  plan        Plan?             @relation(fields: [planId], references: [id])
+  type        String            @default("retail")
+  amount      Decimal           @db.Decimal(10, 2)
+  status      CommissionStatus  @default(APPROVED)
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  payoutId    String?
+  payout      Payout?           @relation(fields: [payoutId], references: [id])
+}
+
+model Payout {
+  id          String      @id @default(cuid())
+  userId      String
+  user        User        @relation(fields: [userId], references: [id])
+  period      String
+  amount      Decimal     @db.Decimal(10, 2)
+  status      String      @default("pending")
+  createdAt   DateTime    @default(now())
+  commissions Commission[]
+}
