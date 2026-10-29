@@ -1,0 +1,127 @@
+function buildTree(members, targetMemberId = null) {
+  const map = new Map(members.map((member) => [member.id, { ...member, children: [] }]));
+
+  for (const member of members) {
+    if (member.sponsorId && map.has(member.sponsorId)) {
+      map.get(member.sponsorId).children.push(map.get(member.id));
+    }
+  }
+
+  if (targetMemberId) {
+    return map.get(targetMemberId) || null;
+  }
+
+  const roots = members.filter((member) => !member.sponsorId).map((member) => map.get(member.id));
+  return roots;
+}
+
+function getDownline(memberId, members) {
+  const childrenMap = new Map();
+
+  for (const member of members) {
+    if (!childrenMap.has(member.sponsorId)) {
+      childrenMap.set(member.sponsorId, []);
+    }
+    if (member.sponsorId) {
+      childrenMap.get(member.sponsorId).push(member);
+    }
+  }
+
+  const result = [];
+  const queue = [...(childrenMap.get(memberId) || [])];
+
+  while (queue.length) {
+    const current = queue.shift();
+    result.push(current);
+    const children = childrenMap.get(current.id) || [];
+    queue.push(...children);
+  }
+
+  return result;
+}
+
+function calculateOrderCommission(order, product, plan, member) {
+  const retailCommission = order.total * (plan.configuration.retailCommissionRate || 0.10);
+  const productBonus = order.total * (product.commissionRate || 0.10);
+  const total = retailCommission + productBonus;
+
+  return {
+    memberId: member.id,
+    memberName: `${member.firstName} ${member.lastName}`,
+    orderId: order.id,
+    productId: product.id,
+    productName: product.name,
+    orderTotal: order.total,
+    directRetailCommission: retailCommission,
+    productCommission: productBonus,
+    totalCommission: total,
+    status: 'approved',
+  };
+}
+
+function calculateCommissions(memberId, members, products, orders, plans) {
+  const member = members.find((entry) => entry.id === memberId);
+  if (!member) {
+    return { memberId, totalCommission: 0, orders: [] };
+  }
+
+  const plan = plans.find((entry) => entry.id === member.planId) || plans[0];
+  const productMap = new Map(products.map((product) => [product.id, product]));
+
+  const orderSummaries = orders
+    .filter((order) => order.userId === memberId)
+    .map((order) => {
+      const product = productMap.get(order.productId);
+      if (!product) return null;
+      return calculateOrderCommission(order, product, plan, member);
+    })
+    .filter(Boolean);
+
+  const totalCommission = orderSummaries.reduce((sum, item) => sum + item.totalCommission, 0);
+
+  const teamMembers = getDownline(memberId, members);
+  const teamVolume = orders
+    .filter((order) => teamMembers.some((person) => person.id === order.userId))
+    .reduce((sum, order) => sum + order.total, 0);
+
+  const teamBonus = teamVolume * (plan.configuration.teamVolumeBonusRate || 0.04);
+
+  return {
+    memberId,
+    memberName: `${member.firstName} ${member.lastName}`,
+    planId: plan.id,
+    planName: plan.name,
+    totalCommission,
+    teamBonus,
+    totalPayout: totalCommission + teamBonus,
+    qualifiesForBonus: teamVolume >= plan.configuration.monthlyQualificationPv,
+    orders: orderSummaries,
+    teamVolume,
+  };
+}
+
+function summarizeCommissionData(members, products, orders, plans) {
+  const totalMembers = members.length;
+  const activeMembers = members.filter((member) => member.status === 'active').length;
+  const pausedMembers = members.filter((member) => member.status === 'paused').length;
+  const totalProducts = products.length;
+  const totalSales = orders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const activePlan = plans.find((plan) => plan.status === 'active');
+
+  return {
+    totalMembers,
+    activeMembers,
+    pausedMembers,
+    totalProducts,
+    totalSales,
+    activePlan,
+    generatedAt: new Date().toISOString(),
+  };
+}
+
+module.exports = {
+  buildTree,
+  getDownline,
+  calculateCommissions,
+  summarizeCommissionData,
+};

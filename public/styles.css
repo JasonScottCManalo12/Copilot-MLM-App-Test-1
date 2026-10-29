@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Copilot MLM App Test 1</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Legitimate product-based MLM starter</p>
+        <h1>Copilot MLM App Test 1</h1>
+      </div>
+      <button id="refreshButton">Refresh</button>
+    </header>
+
+    <main class="dashboard">
+      <section class="cards" id="summaryCards"></section>
+
+      <section class="panel">
+        <div class="panel-header">
+          <h2>Active plans</h2>
+        </div>
+        <div id="plansList" class="list"></div>
+      </section>
+
+      <section class="panel two-column">
+        <div>
+          <div class="panel-header">
+            <h2>Distributor tree</h2>
+          </div>
+          <div id="treeView" class="tree-view"></div>
+        </div>
+        <div>
+          <div class="panel-header">
+            <h2>Commissions</h2>
+          </div>
+          <div id="commissionView" class="commission-view"></div>
+        </div>
+      </section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

@@ -1,0 +1,23 @@
+{
+  "name": "copilot-mlm-app-test-1",
+  "version": "1.0.0",
+  "description": "Legitimate product-based MLM platform starter for sponsor trees, commissions, product sales, and audit records.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "keywords": [
+    "mlm",
+    "affiliate",
+    "direct-selling",
+    "referral",
+    "commission",
+    "dashboard"
+  ],
+  "author": "Jason Scott C. Manalo",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}
